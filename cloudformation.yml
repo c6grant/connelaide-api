@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Simple ECS setup for Connelaide API'
+
+Parameters:
+  ImageUri:
+    Type: String
+    Description: Docker image URI from ECR
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Your VPC ID (same as UI)
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnet IDs (same as UI)
+  ALBSecurityGroupId:
+    Type: String
+    Description: Security group ID of your existing ALB
+  HTTPSListenerArn:
+    Type: String
+    Description: ARN of your existing HTTPS listener from UI stack
+  ClusterName:
+    Type: String
+    Description: Your existing ECS cluster name
+    Default: "connelaide-cluster"
+
+Resources:
+  # Security group for API containers
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow traffic from ALB to API
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroupId
+
+  # Target group for API
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: connelaide-api-tg
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VpcId
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+
+  # Listener rule for API routing
+  APIListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref HTTPSListenerArn
+      Priority: 10
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /api/*
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  # IAM role for task execution
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # Task definition
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: connelaide-api-task
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !Ref TaskExecutionRole
+      ContainerDefinitions:
+        - Name: connelaide-api-container
+          Image: !Ref ImageUri
+          PortMappings:
+            - ContainerPort: 80
+
+  # ECS Service
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: APIListenerRule
+    Properties:
+      ServiceName: connelaide-api-service
+      Cluster: !Ref ClusterName
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: !Ref SubnetIds
+          SecurityGroups:
+            - !Ref ECSSecurityGroup
+      LoadBalancers:
+        - ContainerName: connelaide-api-container
+          ContainerPort: 80
+          TargetGroupArn: !Ref TargetGroup
+
+Outputs:
+  ServiceName:
+    Description: ECS Service Name
+    Value: !GetAtt ECSService.Name
+  TargetGroupArn:
+    Description: API Target Group ARN
+    Value: !Ref TargetGroup

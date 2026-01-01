@@ -29,4 +29,4 @@ async def health():
 @app.get("/api/v1/example")
 async def example_endpoint():
     """Example API endpoint"""
-    return {"message": "This is an example endpoint", "data": {"key": "value"}}
+    return {"message": "This is an example endpoint.. howdy", "data": {"key": "value"}}

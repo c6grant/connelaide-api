@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from auth import get_current_user
 
 app = FastAPI(
     title="Connelaide API",
@@ -10,7 +11,10 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://connelaide.com"],  # Update with your frontend domain in production
+    allow_origins=[
+        "https://connelaide.com",
+        "http://localhost:4200"  # For local development
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,5 +32,21 @@ async def health():
 
 @app.get("/api/v1/example")
 async def example_endpoint():
-    """Example API endpoint"""
+    """Example API endpoint - Public"""
     return {"message": "This is an example endpoint.. howdy", "data": {"key": "value"}}
+
+@app.get("/api/v1/protected")
+async def protected_endpoint(current_user: dict = Depends(get_current_user)):
+    """Protected endpoint - Requires authentication"""
+    return {
+        "message": "This is a protected endpoint",
+        "user": current_user
+    }
+
+@app.get("/api/v1/user/profile")
+async def get_user_profile(current_user: dict = Depends(get_current_user)):
+    """Get the current user's profile"""
+    return {
+        "profile": current_user,
+        "message": "Successfully retrieved user profile"
+    }

@@ -153,7 +153,7 @@ test-local:
 	@echo "Starting FastAPI server locally..."
 	@echo "API will be available at http://localhost:8000"
 	@echo "API docs will be available at http://localhost:8000/docs"
-	uvicorn main:app --reload --host 0.0.0.0 --port 8000
+	python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 cleanup:
 	@echo "Deleting CloudFormation stack..."

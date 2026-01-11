@@ -1,6 +1,10 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from auth import get_current_user
+from sqlalchemy.orm import Session
+from auth import get_current_user, require_permission
+from database import get_db
+from models import Transaction
+from schemas import TransactionResponse
 
 app = FastAPI(
     title="Connelaide API",
@@ -44,8 +48,14 @@ async def protected_endpoint(current_user: dict = Depends(get_current_user)):
     }
 
 @app.get("/api/v1/user/profile")
-async def get_user_profile(current_user: dict = Depends(get_current_user)):
+async def get_user_profile(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Get the current user's profile"""
+    return {
+        "profile": current_user,
+    }
     return {
         "profile": current_user,
         "message": "Successfully retrieved user profile"

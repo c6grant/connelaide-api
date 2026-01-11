@@ -3,16 +3,34 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 import requests
 from functools import lru_cache
+from datetime import datetime, timedelta
 from auth0_config import AUTH0_DOMAIN, AUTH0_API_AUDIENCE, AUTH0_ISSUER, AUTH0_ALGORITHMS
 
 security = HTTPBearer()
 
+# Cache JWKS with timestamp for TTL
+_jwks_cache = {"data": None, "expires_at": None}
 
-@lru_cache()
+
 def get_jwks():
-    """Cache the JWKS (JSON Web Key Set) from Auth0"""
+    """
+    Cache the JWKS (JSON Web Key Set) from Auth0
+    Refreshes cache every 10 minutes to handle key rotation
+    """
+    now = datetime.utcnow()
+    
+    # Return cached data if still valid
+    if _jwks_cache["data"] and _jwks_cache["expires_at"] and now < _jwks_cache["expires_at"]:
+        return _jwks_cache["data"]
+    
+    # Fetch fresh JWKS
     jwks_url = f"https://{AUTH0_DOMAIN}/.well-known/jwks.json"
     jwks = requests.get(jwks_url).json()
+    
+    # Update cache with 10-minute TTL
+    _jwks_cache["data"] = jwks
+    _jwks_cache["expires_at"] = now + timedelta(minutes=10)
+    
     return jwks
 
 

@@ -86,6 +86,8 @@ deploy:
 			ParameterKey=ALBSecurityGroupId,ParameterValue=$$ALB_SG \
 			ParameterKey=HTTPSListenerArn,ParameterValue=$$HTTPS_LISTENER \
 			ParameterKey=ClusterName,ParameterValue=$(CLUSTER_NAME) \
+			ParameterKey=Auth0Domain,ParameterValue=connelaide.us.auth0.com \
+			ParameterKey=Auth0ApiAudience,ParameterValue=https://api.connelaide.com \
 		--capabilities CAPABILITY_IAM \
 		--region $(AWS_REGION); \
 	echo "Waiting for stack creation..."; \
@@ -115,6 +117,8 @@ update-stack:
 			ParameterKey=ALBSecurityGroupId,UsePreviousValue=true \
 			ParameterKey=HTTPSListenerArn,UsePreviousValue=true \
 			ParameterKey=ClusterName,UsePreviousValue=true \
+			ParameterKey=Auth0Domain,ParameterValue=connelaide.us.auth0.com \
+			ParameterKey=Auth0ApiAudience,ParameterValue=https://api.connelaide.com \
 		--capabilities CAPABILITY_IAM \
 		--region $(AWS_REGION); \
 	echo "Waiting for stack update..."; \

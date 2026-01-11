@@ -21,6 +21,19 @@ Parameters:
     Type: String
     Description: Your existing ECS cluster name
     Default: "connelaide-cluster"
+  Auth0Domain:
+    Type: String
+    Description: Auth0 domain (e.g., your-tenant.us.auth0.com)
+  Auth0ApiAudience:
+    Type: String
+    Description: Auth0 API audience/identifier
+  DBSecretArn:
+    Type: String
+    Description: ARN of the database credentials secret in AWS Secrets Manager
+  AWSRegionParam:
+    Type: String
+    Description: AWS Region for Secrets Manager
+    Default: us-east-1
 
 Resources:
   # Security group for API containers
@@ -74,6 +87,54 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
+  # IAM role for task (application runtime)
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+      TaskRoleArn: !Ref TaskRole
+      ContainerDefinitions:
+        - Name: connelaide-api-container
+          Image: !Ref ImageUri
+          PortMappings:
+            - ContainerPort: 80
+          Environment:
+            - Name: AUTH0_DOMAIN
+              Value: !Ref Auth0Domain
+            - Name: AUTH0_API_AUDIENCE
+              Value: !Ref Auth0ApiAudience
+            - Name: DB_SECRET_NAME
+              Value: connelaide/db/credentials
+            - Name: AWS_REGION
+              Value: !Ref AWSRegionParam
+            - Name: ENVIRONMENT
+              Value: production
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: api
+
+  # CloudWatch Logs Group
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/connelaide-api
+      RetentionInDays: 7
+                Action:
+                  - kms:Decrypt
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub 'secretsmanager.${AWS::Region}.amazonaws.com'
+
   # Task definition
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -90,6 +151,11 @@ Resources:
           Image: !Ref ImageUri
           PortMappings:
             - ContainerPort: 80
+          Environment:
+            - Name: AUTH0_DOMAIN
+              Value: !Ref Auth0Domain
+            - Name: AUTH0_API_AUDIENCE
+              Value: !Ref Auth0ApiAudience
 
   # ECS Service
   ECSService:
@@ -100,7 +166,13 @@ Resources:
       Cluster: !Ref ClusterName
       TaskDefinition: !Ref TaskDefinition
       DesiredCount: 1
-      LaunchType: FARGATE
+      CapacityProviderStrategy:
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 1
+          Base: 0
+        - CapacityProvider: FARGATE
+          Weight: 0
+          Base: 0
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: ENABLED

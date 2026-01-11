@@ -11,7 +11,7 @@ env:
   ECS_CLUSTER: connelaide-cluster
   ECS_SERVICE: connelaide-api-service
   CONTAINER_NAME: connelaide-api-container
-  CLOUDFORMATION_STACK: connelaide-api
+  CLOUDFORMATION_STACK: connelaide-api-stack
 
 jobs:
   deploy:

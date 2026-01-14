@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 from dotenv import load_dotenv
-from secrets import get_database_url
+from aws_secrets import get_database_url
 
 load_dotenv()
 

@@ -88,6 +88,8 @@ deploy:
 			ParameterKey=ClusterName,ParameterValue=$(CLUSTER_NAME) \
 			ParameterKey=Auth0Domain,ParameterValue=connelaide.us.auth0.com \
 			ParameterKey=Auth0ApiAudience,ParameterValue=https://api.connelaide.com \
+			ParameterKey=DBSecretArn,ParameterValue=arn:aws:secretsmanager:us-east-2:982141933847:secret:connelaide/db/credentials-sZbOHH \
+			ParameterKey=AWSRegionParam,ParameterValue=us-east-2 \
 		--capabilities CAPABILITY_IAM \
 		--region $(AWS_REGION); \
 	echo "Waiting for stack creation..."; \
@@ -119,6 +121,8 @@ update-stack:
 			ParameterKey=ClusterName,UsePreviousValue=true \
 			ParameterKey=Auth0Domain,ParameterValue=connelaide.us.auth0.com \
 			ParameterKey=Auth0ApiAudience,ParameterValue=https://api.connelaide.com \
+			ParameterKey=DBSecretArn,ParameterValue=arn:aws:secretsmanager:us-east-2:982141933847:secret:connelaide/db/credentials-sZbOHH \
+			ParameterKey=AWSRegionParam,ParameterValue=us-east-2 \
 		--capabilities CAPABILITY_IAM \
 		--region $(AWS_REGION); \
 	echo "Waiting for stack update..."; \

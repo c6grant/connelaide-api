@@ -33,9 +33,16 @@ Parameters:
   AWSRegionParam:
     Type: String
     Description: AWS Region for Secrets Manager
-    Default: us-east-1
+    Default: us-east-2
 
 Resources:
+  # CloudWatch Logs Group
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/connelaide-api
+      RetentionInDays: 7
+
   # Security group for API containers
   ECSSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -74,7 +81,7 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref TargetGroup
 
-  # IAM role for task execution
+  # IAM role for task execution (pulling images, writing logs)
   TaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -87,7 +94,7 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
-  # IAM role for task (application runtime)
+  # IAM role for task (application runtime - accessing Secrets Manager)
   TaskRole:
     Type: AWS::IAM::Role
     Properties:
@@ -98,6 +105,34 @@ Resources:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
       Policies:
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref DBSecretArn
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub 'secretsmanager.${AWS::Region}.amazonaws.com'
+
+  # Task definition
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: connelaide-api-task
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !Ref TaskExecutionRole
       TaskRoleArn: !Ref TaskRole
       ContainerDefinitions:
         - Name: connelaide-api-container
@@ -121,41 +156,6 @@ Resources:
               awslogs-group: !Ref LogGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: api
-
-  # CloudWatch Logs Group
-  LogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: /ecs/connelaide-api
-      RetentionInDays: 7
-                Action:
-                  - kms:Decrypt
-                Resource: '*'
-                Condition:
-                  StringEquals:
-                    kms:ViaService: !Sub 'secretsmanager.${AWS::Region}.amazonaws.com'
-
-  # Task definition
-  TaskDefinition:
-    Type: AWS::ECS::TaskDefinition
-    Properties:
-      Family: connelaide-api-task
-      NetworkMode: awsvpc
-      RequiresCompatibilities:
-        - FARGATE
-      Cpu: '256'
-      Memory: '512'
-      ExecutionRoleArn: !Ref TaskExecutionRole
-      ContainerDefinitions:
-        - Name: connelaide-api-container
-          Image: !Ref ImageUri
-          PortMappings:
-            - ContainerPort: 80
-          Environment:
-            - Name: AUTH0_DOMAIN
-              Value: !Ref Auth0Domain
-            - Name: AUTH0_API_AUDIENCE
-              Value: !Ref Auth0ApiAudience
 
   # ECS Service
   ECSService:
@@ -191,3 +191,6 @@ Outputs:
   TargetGroupArn:
     Description: API Target Group ARN
     Value: !Ref TargetGroup
+  LogGroupName:
+    Description: CloudWatch Log Group
+    Value: !Ref LogGroup

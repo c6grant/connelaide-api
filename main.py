@@ -60,3 +60,19 @@ async def get_user_profile(
         "profile": current_user,
         "message": "Successfully retrieved user profile"
     }
+
+@app.get("/api/v1/transactions/first", response_model=TransactionResponse)
+async def get_first_transaction(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get the first transaction from the database - Protected endpoint"""
+    transaction = db.query(Transaction).first()
+    
+    if not transaction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No transactions found"
+        )
+    
+    return transaction

@@ -166,6 +166,15 @@ Resources:
       Cluster: !Ref ClusterName
       TaskDefinition: !Ref TaskDefinition
       DesiredCount: 1
+      # Circuit breaker stops infinite restart loops and auto-rollbacks on failure
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      # Give container time to start before health checks begin
+      HealthCheckGracePeriodSeconds: 60
       CapacityProviderStrategy:
         - CapacityProvider: FARGATE_SPOT
           Weight: 1

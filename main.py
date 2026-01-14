@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from auth import get_current_user, require_permission
+from auth import get_current_user
 from database import get_db
 from models import Transaction
 from schemas import TransactionResponse

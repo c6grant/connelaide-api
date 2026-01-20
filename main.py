@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from typing import List
+from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from auth import get_current_user
@@ -61,6 +62,21 @@ async def get_user_profile(
         "message": "Successfully retrieved user profile"
     }
 
+@app.get("/api/v1/transactions", response_model=List[TransactionResponse])
+async def get_transactions(
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get transactions within a date range (inclusive)"""
+    transactions = db.query(Transaction)\
+        .filter(Transaction.date >= start_date)\
+        .filter(Transaction.date <= end_date)\
+        .order_by(Transaction.date.desc())\
+        .all()
+    return transactions
+
 @app.get("/api/v1/transactions/first", response_model=TransactionResponse)
 async def get_first_transaction(
     current_user: dict = Depends(get_current_user),
@@ -68,11 +84,11 @@ async def get_first_transaction(
 ):
     """Get the first transaction from the database - Protected endpoint"""
     transaction = db.query(Transaction).first()
-    
+
     if not transaction:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No transactions found"
         )
-    
+
     return transaction

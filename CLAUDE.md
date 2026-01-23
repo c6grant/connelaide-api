@@ -16,10 +16,15 @@ python init_db.py                  # Initialize database tables
 make setup                         # Create ECR repository (one-time)
 make build                         # Build Docker image for linux/amd64
 make push                          # Build and push to ECR
-make deploy                        # Deploy CloudFormation stack
-make update                        # Build, push, and force new ECS deployment
-make update-stack                  # Update CloudFormation template only
+make deploy                        # Deploy CloudFormation stack (first time)
+make update                        # Build, push, and force new ECS deployment (code changes)
+make update-stack                  # Update CloudFormation template (IAM, env vars, infrastructure)
 make cleanup                       # Delete CloudFormation stack
+
+# When to use update vs update-stack:
+# - Code changes (*.py files): make update
+# - Infrastructure changes (cloudformation.yml): make update-stack
+# - Both: run make update-stack first, then make update
 
 # Debugging
 make get-ip                        # Get public IP of running task
@@ -36,7 +41,7 @@ aws logs tail /ecs/connelaide-api --follow  # View CloudWatch logs
 - `auth.py` - Auth0 JWT verification using JWKS with 10-minute cache TTL
 - `auth0_config.py` - Auth0 configuration loaded from environment
 - `database.py` - SQLAlchemy engine setup with connection pooling
-- `models.py` - SQLAlchemy ORM models (currently Transaction for Plaid data)
+- `models.py` - SQLAlchemy ORM models (Transaction, RefreshMetadata)
 - `schemas.py` - Pydantic schemas for request/response validation
 - `secrets.py` - AWS Secrets Manager integration for database credentials
 

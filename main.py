@@ -126,8 +126,9 @@ async def refresh_transactions(
     now = datetime.now(timezone.utc)
 
     if metadata and metadata.last_refreshed_at:
-        # Start from 1 day before last refresh to catch any late-posting transactions
-        start_date = (metadata.last_refreshed_at - timedelta(days=1)).strftime("%Y-%m-%d")
+        # Start from 14 days before last refresh to catch late-clearing pending transactions,
+        # backfilled transactions, and date corrections from Plaid
+        start_date = (metadata.last_refreshed_at - timedelta(days=14)).strftime("%Y-%m-%d")
     else:
         # First refresh: go back 30 days
         start_date = (now - timedelta(days=30)).strftime("%Y-%m-%d")

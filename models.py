@@ -16,8 +16,26 @@ class Transaction(Base):
     pending = Column(Boolean, default=False)
     merchant_name = Column(String(255))
     plaid_generated_category = Column(String(255))
+    connelaide_category = Column(String(300))
+    edited_amount = Column(Float)
+    note = Column(String(700))
+    impacts_checking_balance = Column(String(20), default='review_required')
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     def __repr__(self):
         return f"<Transaction(id={self.id}, date={self.date}, name={self.name}, amount={self.amount})>"
+
+
+class RefreshMetadata(Base):
+    """Model for tracking when Plaid data was last fetched"""
+    __tablename__ = "refresh_metadata"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(100), unique=True, nullable=False, index=True)  # "plaid_transactions"
+    last_refreshed_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<RefreshMetadata(key={self.key}, last_refreshed_at={self.last_refreshed_at})>"

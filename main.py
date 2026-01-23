@@ -1,11 +1,17 @@
+import json
+import os
+from datetime import datetime, timedelta, timezone
 from typing import List
+
+import boto3
 from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+
 from auth import get_current_user
 from database import get_db
-from models import Transaction
-from schemas import TransactionResponse
+from models import Transaction, RefreshMetadata
+from schemas import TransactionResponse, RefreshStatusResponse, RefreshResponse
 
 app = FastAPI(
     title="Connelaide API",
@@ -56,9 +62,6 @@ async def get_user_profile(
     """Get the current user's profile"""
     return {
         "profile": current_user,
-    }
-    return {
-        "profile": current_user,
         "message": "Successfully retrieved user profile"
     }
 
@@ -92,3 +95,100 @@ async def get_first_transaction(
         )
 
     return transaction
+
+
+@app.get("/api/v1/transactions/refresh-status", response_model=RefreshStatusResponse)
+async def get_refresh_status(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get the last refresh timestamp for transactions"""
+    metadata = db.query(RefreshMetadata).filter(
+        RefreshMetadata.key == "plaid_transactions"
+    ).first()
+
+    return RefreshStatusResponse(
+        last_refreshed_at=metadata.last_refreshed_at if metadata else None
+    )
+
+
+@app.post("/api/v1/transactions/refresh", response_model=RefreshResponse)
+async def refresh_transactions(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Invoke Lambda to fetch new transactions from Plaid"""
+    # Get last refresh date
+    metadata = db.query(RefreshMetadata).filter(
+        RefreshMetadata.key == "plaid_transactions"
+    ).first()
+
+    now = datetime.now(timezone.utc)
+
+    if metadata and metadata.last_refreshed_at:
+        # Start from 1 day before last refresh to catch any late-posting transactions
+        start_date = (metadata.last_refreshed_at - timedelta(days=1)).strftime("%Y-%m-%d")
+    else:
+        # First refresh: go back 30 days
+        start_date = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+
+    end_date = now.strftime("%Y-%m-%d")
+
+    # Invoke Lambda
+    try:
+        lambda_client = boto3.client(
+            "lambda",
+            region_name=os.getenv("AWS_REGION", "us-east-1")
+        )
+
+        payload = {
+            "start_date": start_date,
+            "end_date": end_date
+        }
+
+        response = lambda_client.invoke(
+            FunctionName="plaid-fetcher-v2-production",
+            InvocationType="RequestResponse",
+            Payload=json.dumps(payload)
+        )
+
+        # Parse Lambda response
+        response_payload = json.loads(response["Payload"].read().decode("utf-8"))
+
+        if response.get("FunctionError"):
+            return RefreshResponse(
+                success=False,
+                message=f"Lambda error: {response_payload.get('errorMessage', 'Unknown error')}"
+            )
+
+        # Check if Lambda returned a body (API Gateway format)
+        if "body" in response_payload:
+            body = json.loads(response_payload["body"]) if isinstance(response_payload["body"], str) else response_payload["body"]
+            transactions_count = body.get("transactions_count", 0)
+        else:
+            transactions_count = response_payload.get("transactions_count", 0)
+
+        # Update refresh metadata
+        if metadata:
+            metadata.last_refreshed_at = now
+        else:
+            metadata = RefreshMetadata(
+                key="plaid_transactions",
+                last_refreshed_at=now
+            )
+            db.add(metadata)
+
+        db.commit()
+
+        return RefreshResponse(
+            success=True,
+            message=f"Successfully refreshed transactions",
+            transactions_fetched=transactions_count,
+            last_refreshed_at=now
+        )
+
+    except Exception as e:
+        return RefreshResponse(
+            success=False,
+            message=f"Failed to refresh transactions: {str(e)}"
+        )

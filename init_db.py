@@ -3,7 +3,7 @@ Database initialization script.
 Run this to create all tables in your PostgreSQL database.
 """
 from database import engine, Base
-from models import Transaction
+from models import Transaction, RefreshMetadata
 
 def init_db():
     """Create all tables in the database"""

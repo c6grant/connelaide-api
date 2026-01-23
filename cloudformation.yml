@@ -121,6 +121,15 @@ Resources:
                 Condition:
                   StringEquals:
                     kms:ViaService: !Sub 'secretsmanager.${AWS::Region}.amazonaws.com'
+        - PolicyName: LambdaInvokeAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:plaid-fetcher-v2-production'
 
   # Task definition
   TaskDefinition:

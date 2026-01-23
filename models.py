@@ -39,3 +39,16 @@ class RefreshMetadata(Base):
 
     def __repr__(self):
         return f"<RefreshMetadata(key={self.key}, last_refreshed_at={self.last_refreshed_at})>"
+
+
+class ConnalaideCategory(Base):
+    """Model for storing custom Connelaide categories"""
+    __tablename__ = "connalaide_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<ConnalaideCategory(id={self.id}, name={self.name})>"

@@ -37,6 +37,13 @@ class TransactionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
+class TransactionUpdateRequest(BaseModel):
+    connelaide_category: Optional[str] = None
+    edited_amount: Optional[float] = None
+    note: Optional[str] = None
+    impacts_checking_balance: Optional[str] = None
+
+
 class RefreshStatusResponse(BaseModel):
     """Response for refresh status endpoint"""
     last_refreshed_at: Optional[datetime] = None
@@ -48,3 +55,28 @@ class RefreshResponse(BaseModel):
     message: str
     transactions_fetched: Optional[int] = None
     last_refreshed_at: Optional[datetime] = None
+
+
+class ConnalaideCategoryBase(BaseModel):
+    """Base schema for Connelaide Category"""
+    name: str
+
+
+class ConnalaideCategoryCreate(ConnalaideCategoryBase):
+    """Schema for creating a new category"""
+    pass
+
+
+class ConnalaideCategoryUpdate(BaseModel):
+    """Schema for updating a category"""
+    name: Optional[str] = None
+
+
+class ConnalaideCategoryResponse(BaseModel):
+    """Response schema for category"""
+    id: int
+    name: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)

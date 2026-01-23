@@ -10,8 +10,11 @@ from sqlalchemy.orm import Session
 
 from auth import get_current_user
 from database import get_db
-from models import Transaction, RefreshMetadata
-from schemas import TransactionResponse, RefreshStatusResponse, RefreshResponse
+from models import Transaction, RefreshMetadata, ConnalaideCategory
+from schemas import (
+    TransactionResponse, RefreshStatusResponse, RefreshResponse, TransactionUpdateRequest,
+    ConnalaideCategoryCreate, ConnalaideCategoryUpdate, ConnalaideCategoryResponse
+)
 
 app = FastAPI(
     title="Connelaide API",
@@ -193,3 +196,117 @@ async def refresh_transactions(
             success=False,
             message=f"Failed to refresh transactions: {str(e)}"
         )
+
+
+@app.patch("/api/v1/transactions/{transaction_id}", response_model=TransactionResponse)
+async def update_transaction(
+    transaction_id: int,
+    updates: TransactionUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update user-editable fields on a transaction"""
+    transaction = db.query(Transaction).filter(Transaction.id == transaction_id).first()
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    update_data = updates.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(transaction, field, value)
+
+    db.commit()
+    db.refresh(transaction)
+    return transaction
+
+
+# ============================================
+# Connelaide Categories Endpoints
+# ============================================
+
+@app.get("/api/v1/connalaide-categories", response_model=List[ConnalaideCategoryResponse])
+async def get_categories(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all Connelaide categories"""
+    categories = db.query(ConnalaideCategory).order_by(ConnalaideCategory.name).all()
+    return categories
+
+
+@app.get("/api/v1/connalaide-categories/{category_id}", response_model=ConnalaideCategoryResponse)
+async def get_category(
+    category_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a single category by ID"""
+    category = db.query(ConnalaideCategory).filter(ConnalaideCategory.id == category_id).first()
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return category
+
+
+@app.post("/api/v1/connalaide-categories", response_model=ConnalaideCategoryResponse, status_code=status.HTTP_201_CREATED)
+async def create_category(
+    category_data: ConnalaideCategoryCreate,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new category"""
+    # Check if category with same name exists
+    existing = db.query(ConnalaideCategory).filter(ConnalaideCategory.name == category_data.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Category with this name already exists")
+
+    category = ConnalaideCategory(name=category_data.name)
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    return category
+
+
+@app.patch("/api/v1/connalaide-categories/{category_id}", response_model=ConnalaideCategoryResponse)
+async def update_category(
+    category_id: int,
+    updates: ConnalaideCategoryUpdate,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a category"""
+    category = db.query(ConnalaideCategory).filter(ConnalaideCategory.id == category_id).first()
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    update_data = updates.model_dump(exclude_unset=True)
+
+    # Check for duplicate name if name is being updated
+    if "name" in update_data:
+        existing = db.query(ConnalaideCategory).filter(
+            ConnalaideCategory.name == update_data["name"],
+            ConnalaideCategory.id != category_id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Category with this name already exists")
+
+    for field, value in update_data.items():
+        setattr(category, field, value)
+
+    db.commit()
+    db.refresh(category)
+    return category
+
+
+@app.delete("/api/v1/connalaide-categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_category(
+    category_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a category"""
+    category = db.query(ConnalaideCategory).filter(ConnalaideCategory.id == category_id).first()
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    db.delete(category)
+    db.commit()
+    return None

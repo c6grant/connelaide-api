@@ -81,3 +81,38 @@ class ConnalaideCategoryResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================
+# Pay Period Schemas
+# ============================================
+
+class PayPeriodBase(BaseModel):
+    """Base schema for PayPeriod"""
+    start_date: str
+    end_date: str
+    checking_budget: Optional[float] = None
+
+
+class PayPeriodCreate(PayPeriodBase):
+    """Schema for creating a new pay period"""
+    pass
+
+
+class PayPeriodUpdate(BaseModel):
+    """Schema for updating a pay period"""
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    checking_budget: Optional[float] = None
+
+
+class PayPeriodResponse(BaseModel):
+    """Response schema for pay period"""
+    id: int
+    start_date: str
+    end_date: str
+    checking_budget: Optional[float] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)

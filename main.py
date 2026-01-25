@@ -1,7 +1,7 @@
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from typing import List
+from typing import List, Optional
 
 import boto3
 from fastapi import FastAPI, Depends, HTTPException, status, Query
@@ -10,10 +10,11 @@ from sqlalchemy.orm import Session, joinedload
 
 from auth import get_current_user
 from database import get_db
-from models import Transaction, RefreshMetadata, ConnalaideCategory
+from models import Transaction, RefreshMetadata, ConnalaideCategory, PayPeriod
 from schemas import (
     TransactionResponse, RefreshStatusResponse, RefreshResponse, TransactionUpdateRequest,
-    ConnalaideCategoryCreate, ConnalaideCategoryUpdate, ConnalaideCategoryResponse
+    ConnalaideCategoryCreate, ConnalaideCategoryUpdate, ConnalaideCategoryResponse,
+    PayPeriodCreate, PayPeriodUpdate, PayPeriodResponse
 )
 
 app = FastAPI(
@@ -336,5 +337,129 @@ async def delete_category(
     ).update({"connelaide_category_id": None})
 
     db.delete(category)
+    db.commit()
+    return None
+
+
+# ============================================
+# Pay Periods Endpoints
+# ============================================
+
+def validate_pay_period_dates(start_date: str, end_date: str):
+    """Validate that dates are valid YYYY-MM-DD format and end >= start"""
+    try:
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    if end < start:
+        raise HTTPException(status_code=400, detail="End date must be >= start date")
+
+
+def check_pay_period_overlap(db: Session, start_date: str, end_date: str, exclude_id: Optional[int] = None):
+    """Check if the date range overlaps with any existing pay period"""
+    query = db.query(PayPeriod).filter(
+        PayPeriod.start_date <= end_date,
+        PayPeriod.end_date >= start_date
+    )
+    if exclude_id:
+        query = query.filter(PayPeriod.id != exclude_id)
+
+    overlapping = query.first()
+    if overlapping:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Date range overlaps with existing pay period ({overlapping.start_date} to {overlapping.end_date})"
+        )
+
+
+@app.get("/api/v1/pay-periods", response_model=List[PayPeriodResponse])
+async def get_pay_periods(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all pay periods ordered by start_date descending"""
+    pay_periods = db.query(PayPeriod).order_by(PayPeriod.start_date.desc()).all()
+    return pay_periods
+
+
+@app.get("/api/v1/pay-periods/{pay_period_id}", response_model=PayPeriodResponse)
+async def get_pay_period(
+    pay_period_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a single pay period by ID"""
+    pay_period = db.query(PayPeriod).filter(PayPeriod.id == pay_period_id).first()
+    if not pay_period:
+        raise HTTPException(status_code=404, detail="Pay period not found")
+    return pay_period
+
+
+@app.post("/api/v1/pay-periods", response_model=PayPeriodResponse, status_code=status.HTTP_201_CREATED)
+async def create_pay_period(
+    pay_period_data: PayPeriodCreate,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new pay period"""
+    validate_pay_period_dates(pay_period_data.start_date, pay_period_data.end_date)
+    check_pay_period_overlap(db, pay_period_data.start_date, pay_period_data.end_date)
+
+    pay_period = PayPeriod(
+        start_date=pay_period_data.start_date,
+        end_date=pay_period_data.end_date,
+        checking_budget=pay_period_data.checking_budget
+    )
+    db.add(pay_period)
+    db.commit()
+    db.refresh(pay_period)
+    return pay_period
+
+
+@app.patch("/api/v1/pay-periods/{pay_period_id}", response_model=PayPeriodResponse)
+async def update_pay_period(
+    pay_period_id: int,
+    updates: PayPeriodUpdate,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a pay period"""
+    pay_period = db.query(PayPeriod).filter(PayPeriod.id == pay_period_id).first()
+    if not pay_period:
+        raise HTTPException(status_code=404, detail="Pay period not found")
+
+    update_data = updates.model_dump(exclude_unset=True)
+
+    # Get final start_date and end_date for validation
+    new_start = update_data.get("start_date", pay_period.start_date)
+    new_end = update_data.get("end_date", pay_period.end_date)
+
+    # Validate dates if either is being updated
+    if "start_date" in update_data or "end_date" in update_data:
+        validate_pay_period_dates(new_start, new_end)
+        check_pay_period_overlap(db, new_start, new_end, exclude_id=pay_period_id)
+
+    for field, value in update_data.items():
+        setattr(pay_period, field, value)
+
+    db.commit()
+    db.refresh(pay_period)
+    return pay_period
+
+
+@app.delete("/api/v1/pay-periods/{pay_period_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_pay_period(
+    pay_period_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a pay period"""
+    pay_period = db.query(PayPeriod).filter(PayPeriod.id == pay_period_id).first()
+    if not pay_period:
+        raise HTTPException(status_code=404, detail="Pay period not found")
+
+    db.delete(pay_period)
     db.commit()
     return None

@@ -57,3 +57,18 @@ class ConnalaideCategory(Base):
 
     def __repr__(self):
         return f"<ConnalaideCategory(id={self.id}, name={self.name})>"
+
+
+class PayPeriod(Base):
+    """Model for storing pay periods with custom date ranges and budgets"""
+    __tablename__ = "pay_periods"
+
+    id = Column(Integer, primary_key=True, index=True)
+    start_date = Column(String(10), nullable=False, index=True)  # YYYY-MM-DD
+    end_date = Column(String(10), nullable=False, index=True)    # YYYY-MM-DD
+    checking_budget = Column(Float, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<PayPeriod(id={self.id}, start_date={self.start_date}, end_date={self.end_date})>"

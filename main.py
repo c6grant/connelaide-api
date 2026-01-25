@@ -6,7 +6,7 @@ from typing import List
 import boto3
 from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from auth import get_current_user
 from database import get_db
@@ -77,10 +77,17 @@ async def get_transactions(
 ):
     """Get transactions within a date range (inclusive)"""
     transactions = db.query(Transaction)\
+        .options(joinedload(Transaction.category))\
         .filter(Transaction.date >= start_date)\
         .filter(Transaction.date <= end_date)\
-        .order_by(Transaction.date.desc())\
+        .order_by(Transaction.date.desc(), Transaction.transaction_id.desc())\
         .all()
+
+    # Populate connelaide_category name from the relationship for response serialization
+    for t in transactions:
+        if t.category:
+            t.connelaide_category = t.category.name
+
     return transactions
 
 @app.get("/api/v1/transactions/first", response_model=TransactionResponse)
@@ -206,16 +213,32 @@ async def update_transaction(
     db: Session = Depends(get_db)
 ):
     """Update user-editable fields on a transaction"""
-    transaction = db.query(Transaction).filter(Transaction.id == transaction_id).first()
+    transaction = db.query(Transaction)\
+        .options(joinedload(Transaction.category))\
+        .filter(Transaction.id == transaction_id).first()
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
     update_data = updates.model_dump(exclude_unset=True)
+
+    # Validate category_id if provided
+    if 'connelaide_category_id' in update_data and update_data['connelaide_category_id'] is not None:
+        category = db.query(ConnalaideCategory).filter(
+            ConnalaideCategory.id == update_data['connelaide_category_id']
+        ).first()
+        if not category:
+            raise HTTPException(status_code=400, detail="Category not found")
+
     for field, value in update_data.items():
         setattr(transaction, field, value)
 
     db.commit()
     db.refresh(transaction)
+
+    # Populate connelaide_category name from the relationship for response
+    if transaction.category:
+        transaction.connelaide_category = transaction.category.name
+
     return transaction
 
 
@@ -306,6 +329,11 @@ async def delete_category(
     category = db.query(ConnalaideCategory).filter(ConnalaideCategory.id == category_id).first()
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
+
+    # Null out connelaide_category_id on any transactions using this category
+    db.query(Transaction).filter(
+        Transaction.connelaide_category_id == category_id
+    ).update({"connelaide_category_id": None})
 
     db.delete(category)
     db.commit()

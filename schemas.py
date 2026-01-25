@@ -27,7 +27,8 @@ class TransactionResponse(BaseModel):
     pending: bool
     merchant_name: Optional[str] = None
     category: Optional[str] = Field(default=None, validation_alias="plaid_generated_category")
-    connelaide_category: Optional[str] = None
+    connelaide_category_id: Optional[int] = None
+    connelaide_category: Optional[str] = None  # Populated from joined relationship
     edited_amount: Optional[float] = None
     note: Optional[str] = None
     impacts_checking_balance: Optional[str] = None
@@ -38,7 +39,7 @@ class TransactionResponse(BaseModel):
 
 
 class TransactionUpdateRequest(BaseModel):
-    connelaide_category: Optional[str] = None
+    connelaide_category_id: Optional[int] = None
     edited_amount: Optional[float] = None
     note: Optional[str] = None
     impacts_checking_balance: Optional[str] = None

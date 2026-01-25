@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, ForeignKey
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
 
@@ -16,7 +17,9 @@ class Transaction(Base):
     pending = Column(Boolean, default=False)
     merchant_name = Column(String(255))
     plaid_generated_category = Column(String(255))
-    connelaide_category = Column(String(300))
+    connelaide_category = Column(String(300))  # Legacy: kept for migration, use connelaide_category_id
+    connelaide_category_id = Column(Integer, ForeignKey('connalaide_categories.id'), nullable=True)
+    category = relationship("ConnalaideCategory", back_populates="transactions")
     edited_amount = Column(Float)
     note = Column(String(700))
     impacts_checking_balance = Column(String(20), default='review_required')
@@ -49,6 +52,8 @@ class ConnalaideCategory(Base):
     name = Column(String(100), unique=True, nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    transactions = relationship("Transaction", back_populates="category")
 
     def __repr__(self):
         return f"<ConnalaideCategory(id={self.id}, name={self.name})>"

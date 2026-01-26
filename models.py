@@ -50,6 +50,7 @@ class ConnalaideCategory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), unique=True, nullable=False, index=True)
+    target_budget = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -57,6 +58,26 @@ class ConnalaideCategory(Base):
 
     def __repr__(self):
         return f"<ConnalaideCategory(id={self.id}, name={self.name})>"
+
+
+class ProjectedExpense(Base):
+    """Model for user-created projected/expected expenses"""
+    __tablename__ = "projected_expenses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(500), nullable=False)
+    amount = Column(Float, nullable=False)
+    date = Column(String(50), nullable=False, index=True)  # YYYY-MM-DD
+    connelaide_category_id = Column(Integer, ForeignKey('connalaide_categories.id'), nullable=True)
+    category = relationship("ConnalaideCategory")
+    note = Column(String(700))
+    is_struck_out = Column(Boolean, default=False)
+    merged_transaction_id = Column(Integer, ForeignKey('transactions.id'), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<ProjectedExpense(id={self.id}, date={self.date}, name={self.name}, amount={self.amount})>"
 
 
 class PayPeriod(Base):

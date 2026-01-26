@@ -10,11 +10,12 @@ from sqlalchemy.orm import Session, joinedload
 
 from auth import get_current_user
 from database import get_db
-from models import Transaction, RefreshMetadata, ConnalaideCategory, PayPeriod
+from models import Transaction, RefreshMetadata, ConnalaideCategory, PayPeriod, ProjectedExpense
 from schemas import (
     TransactionResponse, RefreshStatusResponse, RefreshResponse, TransactionUpdateRequest,
     ConnalaideCategoryCreate, ConnalaideCategoryUpdate, ConnalaideCategoryResponse,
-    PayPeriodCreate, PayPeriodUpdate, PayPeriodResponse
+    PayPeriodCreate, PayPeriodUpdate, PayPeriodResponse,
+    ProjectedExpenseCreate, ProjectedExpenseUpdate, ProjectedExpenseResponse
 )
 
 app = FastAPI(
@@ -461,5 +462,123 @@ async def delete_pay_period(
         raise HTTPException(status_code=404, detail="Pay period not found")
 
     db.delete(pay_period)
+    db.commit()
+    return None
+
+
+# ============================================
+# Projected Expenses Endpoints
+# ============================================
+
+@app.get("/api/v1/projected-expenses", response_model=List[ProjectedExpenseResponse])
+async def get_projected_expenses(
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get projected expenses within a date range, excluding merged ones by default"""
+    expenses = db.query(ProjectedExpense)\
+        .options(joinedload(ProjectedExpense.category))\
+        .filter(ProjectedExpense.date >= start_date)\
+        .filter(ProjectedExpense.date <= end_date)\
+        .filter(ProjectedExpense.merged_transaction_id == None)\
+        .order_by(ProjectedExpense.date.desc())\
+        .all()
+
+    for e in expenses:
+        e.connelaide_category = e.category.name if e.category else None
+
+    return expenses
+
+
+@app.post("/api/v1/projected-expenses", response_model=ProjectedExpenseResponse, status_code=status.HTTP_201_CREATED)
+async def create_projected_expense(
+    expense_data: ProjectedExpenseCreate,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new projected expense"""
+    if expense_data.connelaide_category_id is not None:
+        category = db.query(ConnalaideCategory).filter(
+            ConnalaideCategory.id == expense_data.connelaide_category_id
+        ).first()
+        if not category:
+            raise HTTPException(status_code=400, detail="Category not found")
+
+    expense = ProjectedExpense(
+        name=expense_data.name,
+        amount=expense_data.amount,
+        date=expense_data.date,
+        connelaide_category_id=expense_data.connelaide_category_id,
+        note=expense_data.note
+    )
+    db.add(expense)
+    db.commit()
+    db.refresh(expense)
+
+    # Eagerly load category for response
+    if expense.connelaide_category_id:
+        db.refresh(expense, ['category'])
+    expense.connelaide_category = expense.category.name if expense.category else None
+
+    return expense
+
+
+@app.patch("/api/v1/projected-expenses/{expense_id}", response_model=ProjectedExpenseResponse)
+async def update_projected_expense(
+    expense_id: int,
+    updates: ProjectedExpenseUpdate,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a projected expense"""
+    expense = db.query(ProjectedExpense)\
+        .options(joinedload(ProjectedExpense.category))\
+        .filter(ProjectedExpense.id == expense_id).first()
+    if not expense:
+        raise HTTPException(status_code=404, detail="Projected expense not found")
+
+    update_data = updates.model_dump(exclude_unset=True)
+
+    # Validate category_id if provided
+    if 'connelaide_category_id' in update_data and update_data['connelaide_category_id'] is not None:
+        category = db.query(ConnalaideCategory).filter(
+            ConnalaideCategory.id == update_data['connelaide_category_id']
+        ).first()
+        if not category:
+            raise HTTPException(status_code=400, detail="Category not found")
+
+    # Validate merged_transaction_id if provided
+    if 'merged_transaction_id' in update_data and update_data['merged_transaction_id'] is not None:
+        transaction = db.query(Transaction).filter(
+            Transaction.id == update_data['merged_transaction_id']
+        ).first()
+        if not transaction:
+            raise HTTPException(status_code=400, detail="Transaction not found")
+
+    for field, value in update_data.items():
+        setattr(expense, field, value)
+
+    db.commit()
+    db.refresh(expense)
+
+    expense.connelaide_category = expense.category.name if expense.category else None
+
+    return expense
+
+
+@app.delete("/api/v1/projected-expenses/{expense_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_projected_expense(
+    expense_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a projected expense"""
+    expense = db.query(ProjectedExpense).filter(ProjectedExpense.id == expense_id).first()
+    if not expense:
+        raise HTTPException(status_code=404, detail="Projected expense not found")
+
+    db.delete(expense)
     db.commit()
     return None

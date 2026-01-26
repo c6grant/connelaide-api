@@ -61,6 +61,7 @@ class RefreshResponse(BaseModel):
 class ConnalaideCategoryBase(BaseModel):
     """Base schema for Connelaide Category"""
     name: str
+    target_budget: Optional[float] = None
 
 
 class ConnalaideCategoryCreate(ConnalaideCategoryBase):
@@ -71,12 +72,60 @@ class ConnalaideCategoryCreate(ConnalaideCategoryBase):
 class ConnalaideCategoryUpdate(BaseModel):
     """Schema for updating a category"""
     name: Optional[str] = None
+    target_budget: Optional[float] = None
 
 
 class ConnalaideCategoryResponse(BaseModel):
     """Response schema for category"""
     id: int
     name: str
+    target_budget: Optional[float] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================
+# Projected Expense Schemas
+# ============================================
+
+class ProjectedExpenseBase(BaseModel):
+    """Base schema for Projected Expense"""
+    name: str
+    amount: float
+    date: str
+    connelaide_category_id: Optional[int] = None
+    note: Optional[str] = None
+
+
+class ProjectedExpenseCreate(ProjectedExpenseBase):
+    """Schema for creating a new projected expense"""
+    pass
+
+
+class ProjectedExpenseUpdate(BaseModel):
+    """Schema for updating a projected expense"""
+    name: Optional[str] = None
+    amount: Optional[float] = None
+    date: Optional[str] = None
+    connelaide_category_id: Optional[int] = None
+    note: Optional[str] = None
+    is_struck_out: Optional[bool] = None
+    merged_transaction_id: Optional[int] = None
+
+
+class ProjectedExpenseResponse(BaseModel):
+    """Response schema for projected expense"""
+    id: int
+    name: str
+    amount: float
+    date: str
+    connelaide_category_id: Optional[int] = None
+    connelaide_category: Optional[str] = None  # Populated from join
+    note: Optional[str] = None
+    is_struck_out: bool = False
+    merged_transaction_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 

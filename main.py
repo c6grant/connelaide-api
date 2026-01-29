@@ -1,6 +1,7 @@
 import json
 import os
-from datetime import datetime, timedelta, timezone
+import calendar
+from datetime import datetime, timedelta, timezone, date as date_type
 from typing import List, Optional
 
 import boto3
@@ -10,12 +11,13 @@ from sqlalchemy.orm import Session, joinedload
 
 from auth import get_current_user
 from database import get_db
-from models import Transaction, RefreshMetadata, ConnalaideCategory, PayPeriod, ProjectedExpense
+from models import Transaction, RefreshMetadata, ConnalaideCategory, PayPeriod, ProjectedExpense, RecurringExpense
 from schemas import (
     TransactionResponse, RefreshStatusResponse, RefreshResponse, TransactionUpdateRequest,
     ConnalaideCategoryCreate, ConnalaideCategoryUpdate, ConnalaideCategoryResponse,
     PayPeriodCreate, PayPeriodUpdate, PayPeriodResponse,
-    ProjectedExpenseCreate, ProjectedExpenseUpdate, ProjectedExpenseResponse
+    ProjectedExpenseCreate, ProjectedExpenseUpdate, ProjectedExpenseResponse,
+    RecurringExpenseCreate, RecurringExpenseUpdate, RecurringExpenseResponse
 )
 
 app = FastAPI(
@@ -467,6 +469,94 @@ async def delete_pay_period(
 
 
 # ============================================
+# Recurring Expense Generation Helpers
+# ============================================
+
+def compute_occurrence_dates(recurring, range_start: str, range_end: str) -> list:
+    """Compute YYYY-MM-DD dates where this recurring expense occurs within range."""
+    r_start = max(recurring.start_date, range_start)
+    r_end = range_end
+    if recurring.end_date:
+        r_end = min(recurring.end_date, range_end)
+    if r_start > r_end:
+        return []
+
+    start = datetime.strptime(r_start, "%Y-%m-%d").date()
+    end = datetime.strptime(r_end, "%Y-%m-%d").date()
+    dates = []
+
+    if recurring.frequency == 'monthly':
+        current_year, current_month = start.year, start.month
+        while True:
+            max_day = calendar.monthrange(current_year, current_month)[1]
+            day = min(recurring.day_of_month, max_day)
+            occ = date_type(current_year, current_month, day)
+            if occ > end:
+                break
+            if occ >= start:
+                dates.append(occ.strftime("%Y-%m-%d"))
+            if current_month == 12:
+                current_month = 1
+                current_year += 1
+            else:
+                current_month += 1
+
+    elif recurring.frequency == 'yearly':
+        month = recurring.month_of_year
+        if month:
+            for year in range(start.year, end.year + 1):
+                max_day = calendar.monthrange(year, month)[1]
+                day = min(recurring.day_of_month, max_day)
+                try:
+                    occ = date_type(year, month, day)
+                except ValueError:
+                    continue
+                if start <= occ <= end:
+                    dates.append(occ.strftime("%Y-%m-%d"))
+
+    return dates
+
+
+def generate_recurring_projected_expenses(db: Session, start_date: str, end_date: str):
+    """Auto-create ProjectedExpense records for recurring expenses in the date range."""
+    recurring_expenses = db.query(RecurringExpense).filter(
+        RecurringExpense.is_active == True,
+        RecurringExpense.start_date <= end_date,
+    ).all()
+    recurring_expenses = [
+        re for re in recurring_expenses
+        if re.end_date is None or re.end_date >= start_date
+    ]
+
+    for recurring in recurring_expenses:
+        occurrence_dates = compute_occurrence_dates(recurring, start_date, end_date)
+        if not occurrence_dates:
+            continue
+
+        existing_dates = set(
+            row[0] for row in db.query(ProjectedExpense.date).filter(
+                ProjectedExpense.recurring_expense_id == recurring.id,
+                ProjectedExpense.date >= start_date,
+                ProjectedExpense.date <= end_date
+            ).all()
+        )
+
+        for occ_date in occurrence_dates:
+            if occ_date not in existing_dates:
+                new_pe = ProjectedExpense(
+                    name=recurring.name,
+                    amount=recurring.amount,
+                    date=occ_date,
+                    connelaide_category_id=recurring.connelaide_category_id,
+                    note=recurring.note,
+                    recurring_expense_id=recurring.id
+                )
+                db.add(new_pe)
+
+    db.commit()
+
+
+# ============================================
 # Projected Expenses Endpoints
 # ============================================
 
@@ -478,6 +568,8 @@ async def get_projected_expenses(
     db: Session = Depends(get_db)
 ):
     """Get projected expenses within a date range, excluding merged ones by default"""
+    generate_recurring_projected_expenses(db, start_date, end_date)
+
     expenses = db.query(ProjectedExpense)\
         .options(joinedload(ProjectedExpense.category))\
         .filter(ProjectedExpense.date >= start_date)\
@@ -578,6 +670,156 @@ async def delete_projected_expense(
     expense = db.query(ProjectedExpense).filter(ProjectedExpense.id == expense_id).first()
     if not expense:
         raise HTTPException(status_code=404, detail="Projected expense not found")
+
+    db.delete(expense)
+    db.commit()
+    return None
+
+
+# ============================================
+# Recurring Expenses Endpoints
+# ============================================
+
+@app.get("/api/v1/recurring-expenses", response_model=List[RecurringExpenseResponse])
+async def get_recurring_expenses(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all recurring expenses ordered by name"""
+    expenses = db.query(RecurringExpense)\
+        .options(joinedload(RecurringExpense.category))\
+        .order_by(RecurringExpense.name)\
+        .all()
+
+    for e in expenses:
+        e.connelaide_category = e.category.name if e.category else None
+
+    return expenses
+
+
+@app.post("/api/v1/recurring-expenses", response_model=RecurringExpenseResponse, status_code=status.HTTP_201_CREATED)
+async def create_recurring_expense(
+    expense_data: RecurringExpenseCreate,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new recurring expense"""
+    if expense_data.frequency not in ('monthly', 'yearly'):
+        raise HTTPException(status_code=400, detail="Frequency must be 'monthly' or 'yearly'")
+    if not (1 <= expense_data.day_of_month <= 31):
+        raise HTTPException(status_code=400, detail="day_of_month must be between 1 and 31")
+    if expense_data.frequency == 'yearly':
+        if not expense_data.month_of_year or not (1 <= expense_data.month_of_year <= 12):
+            raise HTTPException(status_code=400, detail="month_of_year must be between 1 and 12 for yearly frequency")
+
+    if expense_data.connelaide_category_id is not None:
+        category = db.query(ConnalaideCategory).filter(
+            ConnalaideCategory.id == expense_data.connelaide_category_id
+        ).first()
+        if not category:
+            raise HTTPException(status_code=400, detail="Category not found")
+
+    expense = RecurringExpense(
+        name=expense_data.name,
+        amount=expense_data.amount,
+        frequency=expense_data.frequency,
+        day_of_month=expense_data.day_of_month,
+        month_of_year=expense_data.month_of_year,
+        start_date=expense_data.start_date,
+        end_date=expense_data.end_date,
+        connelaide_category_id=expense_data.connelaide_category_id,
+        note=expense_data.note
+    )
+    db.add(expense)
+    db.commit()
+    db.refresh(expense)
+
+    if expense.connelaide_category_id:
+        db.refresh(expense, ['category'])
+    expense.connelaide_category = expense.category.name if expense.category else None
+
+    return expense
+
+
+@app.patch("/api/v1/recurring-expenses/{expense_id}", response_model=RecurringExpenseResponse)
+async def update_recurring_expense(
+    expense_id: int,
+    updates: RecurringExpenseUpdate,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a recurring expense. Deletes future untouched generated instances so they regenerate."""
+    expense = db.query(RecurringExpense)\
+        .options(joinedload(RecurringExpense.category))\
+        .filter(RecurringExpense.id == expense_id).first()
+    if not expense:
+        raise HTTPException(status_code=404, detail="Recurring expense not found")
+
+    update_data = updates.model_dump(exclude_unset=True)
+
+    # Validate frequency if provided
+    if 'frequency' in update_data and update_data['frequency'] not in ('monthly', 'yearly'):
+        raise HTTPException(status_code=400, detail="Frequency must be 'monthly' or 'yearly'")
+    if 'day_of_month' in update_data and not (1 <= update_data['day_of_month'] <= 31):
+        raise HTTPException(status_code=400, detail="day_of_month must be between 1 and 31")
+
+    # Validate category if provided
+    if 'connelaide_category_id' in update_data and update_data['connelaide_category_id'] is not None:
+        category = db.query(ConnalaideCategory).filter(
+            ConnalaideCategory.id == update_data['connelaide_category_id']
+        ).first()
+        if not category:
+            raise HTTPException(status_code=400, detail="Category not found")
+
+    for field, value in update_data.items():
+        setattr(expense, field, value)
+
+    # Delete future untouched generated projected expenses so they regenerate with new values
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    db.query(ProjectedExpense).filter(
+        ProjectedExpense.recurring_expense_id == expense_id,
+        ProjectedExpense.date > today_str,
+        ProjectedExpense.is_struck_out == False,
+        ProjectedExpense.merged_transaction_id == None,
+        ProjectedExpense.updated_at == None
+    ).delete(synchronize_session=False)
+
+    db.commit()
+    db.refresh(expense)
+
+    expense.connelaide_category = expense.category.name if expense.category else None
+
+    return expense
+
+
+@app.delete("/api/v1/recurring-expenses/{expense_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_recurring_expense(
+    expense_id: int,
+    delete_future: bool = Query(True, description="Delete future untouched generated instances"),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a recurring expense"""
+    expense = db.query(RecurringExpense).filter(RecurringExpense.id == expense_id).first()
+    if not expense:
+        raise HTTPException(status_code=404, detail="Recurring expense not found")
+
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    if delete_future:
+        # Delete future untouched instances
+        db.query(ProjectedExpense).filter(
+            ProjectedExpense.recurring_expense_id == expense_id,
+            ProjectedExpense.date > today_str,
+            ProjectedExpense.is_struck_out == False,
+            ProjectedExpense.merged_transaction_id == None,
+            ProjectedExpense.updated_at == None
+        ).delete(synchronize_session=False)
+
+    # Null out recurring_expense_id on remaining instances so they become standalone
+    db.query(ProjectedExpense).filter(
+        ProjectedExpense.recurring_expense_id == expense_id
+    ).update({"recurring_expense_id": None}, synchronize_session=False)
 
     db.delete(expense)
     db.commit()

@@ -1,4 +1,4 @@
-.PHONY: help build push deploy update update-stack cleanup get-ip test-local
+.PHONY: help build push deploy update update-stack cleanup get-ip test-local db-start db-stop db-reset
 
 # Variables - Set these for your environment
 AWS_REGION ?= us-east-2
@@ -23,7 +23,10 @@ help:
 	@echo "  update      - Build, push, and force new ECS deployment"
 	@echo "  update-stack - Update CloudFormation stack (for config changes)"
 	@echo "  get-ip      - Get the public IP of the running task"
-	@echo "  test-local  - Run the API locally for testing"
+	@echo "  test-local  - Start Postgres, init tables, seed data, run API"
+	@echo "  db-start    - Start local Postgres container"
+	@echo "  db-stop     - Stop local Postgres container"
+	@echo "  db-reset    - Stop Postgres, remove data volume, restart fresh"
 	@echo "  cleanup     - Delete CloudFormation stack"
 	@echo ""
 	@echo "Full workflow: make setup build push deploy"
@@ -158,10 +161,47 @@ get-ip:
 	fi
 
 test-local:
+	@echo "Starting local Postgres via Docker..."
+	docker compose up -d
+	@echo "Waiting for Postgres to be ready..."
+	@until docker exec connelaide-postgres pg_isready -U connelaide > /dev/null 2>&1; do \
+		sleep 1; \
+	done
+	@echo "Postgres is ready."
+	@echo "Creating database tables..."
+	DATABASE_URL=postgresql://connelaide:connelaide@localhost:5432/connelaide python3 init_db.py
+	@echo "Seeding dummy data..."
+	python3 seed_data.py
 	@echo "Starting FastAPI server locally..."
 	@echo "API will be available at http://localhost:8000"
 	@echo "API docs will be available at http://localhost:8000/docs"
-	python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+	DATABASE_URL=postgresql://connelaide:connelaide@localhost:5432/connelaide \
+	AUTH0_DOMAIN=connelaide.us.auth0.com \
+	AUTH0_API_AUDIENCE=https://api.connelaide.com \
+		python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+db-start:
+	@echo "Starting local Postgres..."
+	docker compose up -d
+	@until docker exec connelaide-postgres pg_isready -U connelaide > /dev/null 2>&1; do \
+		sleep 1; \
+	done
+	@echo "Postgres is ready on localhost:5432"
+
+db-stop:
+	@echo "Stopping local Postgres..."
+	docker compose down
+	@echo "Postgres stopped."
+
+db-reset:
+	@echo "Resetting local Postgres (removing all data)..."
+	docker compose down -v
+	@echo "Starting fresh Postgres..."
+	docker compose up -d
+	@until docker exec connelaide-postgres pg_isready -U connelaide > /dev/null 2>&1; do \
+		sleep 1; \
+	done
+	@echo "Postgres is ready. Run 'make test-local' to re-initialize and seed."
 
 cleanup:
 	@echo "Deleting CloudFormation stack..."

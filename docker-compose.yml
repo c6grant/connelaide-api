@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: connelaide-postgres
+    environment:
+      POSTGRES_USER: connelaide
+      POSTGRES_PASSWORD: connelaide
+      POSTGRES_DB: connelaide
+    ports:
+      - "5432:5432"
+    volumes:
+      - connelaide-pgdata:/var/lib/postgresql/data
+
+volumes:
+  connelaide-pgdata:

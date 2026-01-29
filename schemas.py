@@ -126,6 +126,7 @@ class ProjectedExpenseResponse(BaseModel):
     note: Optional[str] = None
     is_struck_out: bool = False
     merged_transaction_id: Optional[int] = None
+    recurring_expense_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -161,6 +162,55 @@ class PayPeriodResponse(BaseModel):
     start_date: str
     end_date: str
     checking_budget: Optional[float] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================
+# Recurring Expense Schemas
+# ============================================
+
+class RecurringExpenseBase(BaseModel):
+    name: str
+    amount: float
+    frequency: str  # 'monthly' or 'yearly'
+    day_of_month: int  # 1-31
+    month_of_year: Optional[int] = None  # 1-12, required if frequency='yearly'
+    start_date: str  # YYYY-MM-DD
+    end_date: Optional[str] = None
+    connelaide_category_id: Optional[int] = None
+    note: Optional[str] = None
+
+class RecurringExpenseCreate(RecurringExpenseBase):
+    pass
+
+class RecurringExpenseUpdate(BaseModel):
+    name: Optional[str] = None
+    amount: Optional[float] = None
+    frequency: Optional[str] = None
+    day_of_month: Optional[int] = None
+    month_of_year: Optional[int] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    connelaide_category_id: Optional[int] = None
+    note: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class RecurringExpenseResponse(BaseModel):
+    id: int
+    name: str
+    amount: float
+    frequency: str
+    day_of_month: int
+    month_of_year: Optional[int] = None
+    start_date: str
+    end_date: Optional[str] = None
+    connelaide_category_id: Optional[int] = None
+    connelaide_category: Optional[str] = None
+    note: Optional[str] = None
+    is_active: bool = True
     created_at: datetime
     updated_at: Optional[datetime] = None
 

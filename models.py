@@ -73,11 +73,35 @@ class ProjectedExpense(Base):
     note = Column(String(700))
     is_struck_out = Column(Boolean, default=False)
     merged_transaction_id = Column(Integer, ForeignKey('transactions.id'), nullable=True)
+    recurring_expense_id = Column(Integer, ForeignKey('recurring_expenses.id'), nullable=True)
+    recurring_expense = relationship("RecurringExpense")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     def __repr__(self):
         return f"<ProjectedExpense(id={self.id}, date={self.date}, name={self.name}, amount={self.amount})>"
+
+
+class RecurringExpense(Base):
+    __tablename__ = "recurring_expenses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(500), nullable=False)
+    amount = Column(Float, nullable=False)
+    frequency = Column(String(10), nullable=False)   # 'monthly' or 'yearly'
+    day_of_month = Column(Integer, nullable=False)    # 1-31
+    month_of_year = Column(Integer, nullable=True)    # 1-12, only for yearly
+    start_date = Column(String(10), nullable=False, index=True)  # YYYY-MM-DD
+    end_date = Column(String(10), nullable=True)      # YYYY-MM-DD, null = indefinite
+    connelaide_category_id = Column(Integer, ForeignKey('connalaide_categories.id'), nullable=True)
+    category = relationship("ConnalaideCategory")
+    note = Column(String(700), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<RecurringExpense(id={self.id}, name={self.name}, frequency={self.frequency})>"
 
 
 class PayPeriod(Base):
